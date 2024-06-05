@@ -60,6 +60,7 @@ Make sure you have the following prerequisites installed:
     > ```
     > openai
     > python-docx
+    > requests
     > ```
 
 4. **Set up your OpenAI API key and organization ID**:

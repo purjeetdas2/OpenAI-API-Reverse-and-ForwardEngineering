@@ -1,0 +1,157 @@
+1. COBOL Program (ORDERPGM):
+```
+  IDENTIFICATION DIVISION.
+       PROGRAM-ID. MAINCOBOL.
+       
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT INPUT-FILE ASSIGN TO 'INPUTFILE'
+               ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT OUTPUT-FILE ASSIGN TO 'OUTPUTFILE'
+               ORGANIZATION IS LINE SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  INPUT-FILE.
+       01  INPUT-RECORD                PIC X(80).
+       
+       FD  OUTPUT-FILE.
+       01  OUTPUT-RECORD               PIC X(80).
+
+       WORKING-STORAGE SECTION.
+       01  WS-DB2-FIELDS.
+           05  WS-DB2-CUSTNUM         PIC X(10).
+           05  WS-DB2-CUSTNAME        PIC X(30).
+
+       EXEC SQL
+           INCLUDE SQLCA
+       END-EXEC.
+
+       PROCEDURE DIVISION.
+
+       OPEN-FILES.
+           OPEN INPUT INPUT-FILE
+           OPEN OUTPUT OUTPUT-FILE.
+
+       READ-INPUT.
+           PERFORM UNTIL WS-EOF
+              READ INPUT-FILE INTO INPUT-RECORD
+              AT END
+                 MOVE 'YES' TO WS-EOF
+              NOT AT END
+                 PERFORM PROCESS-RECORD
+           END-PERFORM.
+           CLOSE INPUT-FILE.
+           CLOSE OUTPUT-FILE.
+           GOBACK.
+
+       PROCESS-RECORD.
+           MOVE INPUT-RECORD TO OUTPUT-RECORD
+           PERFORM ENRICH-RECORD
+           WRITE OUTPUT-RECORD.
+
+       ENRICH-RECORD.
+           EXEC SQL
+               SELECT CUSTNUM, CUSTNAME INTO :WS-DB2-CUSTNUM, :WS-DB2-CUSTNAME
+               FROM CUSTOMER_TABLE
+               WHERE CUSTID = :INPUT-RECORD(1:10)
+           END-EXEC.
+
+           IF SQLCODE = 0 THEN
+               MOVE WS-DB2-CUSTNUM TO OUTPUT-RECORD(50:10)
+               MOVE WS-DB2-CUSTNAME TO OUTPUT-RECORD(60:30)
+           ELSE
+               MOVE 'ERROR' TO OUTPUT-RECORD(50:10)
+               * Error handling code here
+           END-IF.
+
+       END PROGRAM MAINCOBOL.
+```
+
+2. Subroutine (VALIDATESUB):
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ENRICHMENT.
+       
+       AUTHOR. Your Name.
+
+       ENVIRONMENT DIVISION.
+       DATA DIVISION.
+       
+       WORKING-STORAGE SECTION.
+       01  WS-ENRICHED-DATA.
+           05  WS-ENRICHED-FIELD1  PIC X(10).
+           05  WS-ENRICHED-FIELD2  PIC X(30).
+       
+       PROCEDURE DIVISION USING WS-INPUT-RECORD WS-OUTPUT-RECORD.
+       GET-ENRICHED-DATA.
+       
+           EXEC SQL
+                  SELECT FIELD1, FIELD2 INTO :WS-ENRICHED-FIELD1, :WS-ENRICHED-FIELD2
+                  FROM ENRICHMENT_TABLE
+                  WHERE KEYFIELD = :WS-INPUT-RECORD(1:10)
+           END-EXEC.
+           IF SQLCODE = 0 THEN
+               MOVE WS-ENRICHED-FIELD1 TO WS-OUTPUT-RECORD(51:10)
+               MOVE WS-ENRICHED-FIELD2 TO WS-OUTPUT-RECORD(61:30)
+           ELSE
+               MOVE 'ERROR' TO WS-OUTPUT-RECORD(51:10)
+           END-IF.
+       GOBACK.
+```
+
+3. JCL Job (ORDERJCL):
+```JCL
+//EDI850PR JOB (ACCTINFO),'PROCESS EDI 850',CLASS=A,MSGCLASS=A, 
+//            NOTIFY=&SYSUID
+//*
+//* Step to call the PROC which includes main processing
+//STEP1 EXEC PROC=EDI850PROC
+//*
+//* Step to notify completion
+//STEP2 EXEC PGM=IKJEFT01,DYNAMNBR=20
+//SYSTSPRT DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//SYSUDUMP DD SYSOUT=*
+//SYSIN    DD *
+  SEND 'EDI 850 Processing Completed' USER(youruserid)
+/*
+//
+```
+
+4. Control Card:
+
+```plaintext
+00001 RULE: VALIDATION RULE DESCRIPTION
+00002 RULE: ENRICHMENT RULE DESCRIPTION
+```
+
+5ß. PROC
+```
+//EDI850PROC PROC
+//*
+//* Step to access the EDI 850 translated file
+//ACCESSTRANSLATED  EXEC PGM=IEBGENER
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  DUMMY
+//SYSUT2   DD  DSN=&&
+//SYSUT2   DD  DSN=&&TRANSLATEF,DISP=(NEW,PASS),
+//            UNIT=SYSDA,SPACE=(CYL,(1,1)),
+//            DCB=(LRECL=80,RECFM=FB,BLKSIZE=0)
+//SYSUT1   DD  DSN=YOUR.MFT.PATH.EDI850,DISP=SHR
+//*
+//* Step to execute the main COBOL program
+//EXECMAINPGM  EXEC PGM=MAINCOBOL,REGION=0M
+//STEPLIB    DD  DSN=YOUR.COBOL.LOADLIB,DISP=SHR
+//SYSPRINT   DD  SYSOUT=*
+//SYSIN      DD  DUMMY
+//INPUTFILE  DD  DSN=&&TRANSLATEF,DISP=(OLD,DELETE)
+//OUTPUTFILE DD  DSN=DEST.FLATFILE.OUTPUT,DISP=(NEW,CATLG,DELETE),
+//              UNIT=SYSDA,SPACE=(CYL,(1,1),RLSE),
+//              DCB=(LRECL=80,RECFM=FB,BLKSIZE=0)
+//*
+//* Additional control card if necessary
+//CONTROL1   DD  DSN=YOUR.CONTROL.CARD.DATASET,DISP=SHR
+// 
+```

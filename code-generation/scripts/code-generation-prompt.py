@@ -1,59 +1,34 @@
 from openai import OpenAI
-import docx
+from datetime import datetime
 import os
+import json
+from code_generator import CodeGenerator
 
-
-client = OpenAI()
-prompt = """
-You are an expert software developer proficient in both mainframe technologies and modern Java-based frameworks, particularly Spring Batch. Given a document that summarizes the key elements of a mainframe system, including JCL Jobs, COBOL programs, Subroutines, and Copybooks, your task is to convert these business rules and logic into a Spring Batch application. 
-
-Content of the document:
-- High-level summary of JCL Job functionalities
-- Details of COBOL program logic
-- Description of Subroutine workflows
-- Content and structure of Copybooks
-"""
-def extract_code(bre):
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-        {
-            "role": "user",
-            "content": prompt+bre
-        }
-        ],
-        temperature=0.7,
-        max_tokens=4000,
-        top_p=0.95,
-        frequency_penalty=0,
-        presence_penalty=0
-    )
-    return response.choices[0].message.content
-def extract_bre(input_folder):
-    print(f"..... Read the code from the input folder location ...[{input_folder}]")
-    for filename in os.listdir(input_folder):
-        file_path= os.path.join(input_folder,filename)
-        if os.path.isfile(file_path) and file_path.endswith(".docx"):
-            print(file_path)
-            doc = docx.Document(file_path)
-            fullText = []
-            for para in doc.paragraphs:
-                fullText.append(para.text)
-    return '\n'.join(fullText)
-
-def save_to_code_location(content,target_file_name):
-    print(f"..... Writing the extracted code to file - [{target_file_name}]")
-    doc = docx.Document()
-    doc.add_paragraph(content)
-    doc.save(target_file_name)
-
+def load_prompts(file_path):
+    with open(file_path, 'r') as file:
+        prompts = json.load(file)
+    return prompts
 
 def main():
+    api_key = 'sk-proj-LgGQei5icg6KFoHDreL3T3BlbkFJkM4dfUDsXXyf0Nuslfnp'
+    organization = 'org-oQsNufS23tegfgTy5LzUj2RF'
+ 
+    folder = input("Enter Program folder:")
     current_working_directory = os.getcwd()
+
     try:
-        bre_doc = extract_bre(input_folder=current_working_directory+'/docs/')
-        extracted_code = extract_code(bre=bre_doc)
-        save_to_code_location(content=extracted_code,target_file_name=current_working_directory+'/code/'+'SampleCodeGenrated.docx')
+        # Extract the specific prompt you want to use
+        # Load the prompts from the external file
+        #prompts = load_prompts(file_path=os.path.join(current_working_directory, 'prompt-templates','SUMMARIZE_JCL_COBOL.json'))
+        #prompt = prompts.get('prompt', 'Default prompt in case key is not found')
+        prompt = "Content of the document: \n- High-level summary of JCL Job functionalities \n- Details of COBOL program logic \n- Description of Subroutine workflows \n- Content and structure of Copybooks"
+        #print(prompt)
+        code_generator = CodeGenerator(api_key=api_key, organization=organization, prompt=prompt)
+        bre_doc = code_generator.extract_bre(input_folder=os.path.join(current_working_directory, 'docs', folder))
+        extracted_code = code_generator.extract_code(bre=bre_doc)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{folder}_{timestamp}.docx"
+        code_generator.save_to_code_location(content=extracted_code,target_file_name=os.path.join(current_working_directory, 'code', filename))
         print("...... Code Generated successfully ...")
     except Exception as e:
         print(f"An error occurred: {e}")
