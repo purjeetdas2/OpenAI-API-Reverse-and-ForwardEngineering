@@ -1,8 +1,15 @@
 import requests
 import os
 import openai
+import re
+import json
 from openai import OpenAI
 from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_PARAGRAPH_ALIGNMENT
+from document_generator import WordDocumentGenerator
+
+
 
 
 class MainframeAnalyzer:
@@ -35,7 +42,7 @@ class MainframeAnalyzer:
                 "model": "gpt-4-omni",
                 "messages": messages,
                 "temperature": 0.5,
-                "max_tokens": 4095,
+                "max_tokens": 4000,
                 "top_p": 0.95,
                 "frequency_penalty": 0,
                 "presence_penalty": 0
@@ -46,9 +53,9 @@ class MainframeAnalyzer:
             return result['choices'][0]['message']['content']
 
         elif self.service == 'openai':
-            response = self.client.chat.completions.create(model="gpt-4",
+            response = self.client.chat.completions.create(model="gpt-4o",
             messages=messages,
-            temperature=0.7,
+            temperature=0.5,
             max_tokens=4000,
             top_p=0.95,
             frequency_penalty=0,
@@ -66,33 +73,33 @@ class MainframeAnalyzer:
                     return file.read()
         raise FileNotFoundError(f"No .txt files found in the provided directory: {input_folder}")
 
-    def save_to_docx(self, content: str, target_file_name: str):
+
+    
+    
+    def save_to_docx(self, response: str, target_file_name: str):
         print(f"Writing the extracted business rules to file - [{target_file_name}]")
-        doc = Document()
-        doc.add_heading('Response:', level=1)
+      
+        # Print raw response for debugging (optional)
+        print("Raw response:\n", response)
 
-        paragraphs = content.split('\n')
-        for paragraph in paragraphs:
-            clean_paragraph = paragraph.strip()
-            if clean_paragraph.startswith('###'):
-                doc.add_heading(clean_paragraph.strip('# ').title(), level=2)
-            elif clean_paragraph.startswith('####'):
-                doc.add_heading(clean_paragraph.strip('# ').title(), level=3)
-            elif clean_paragraph.startswith('-'):
-                p = doc.add_paragraph(clean_paragraph.lstrip('- '))
-                p.style = 'List Bullet'
-            elif clean_paragraph:
-                self._add_paragraph_with_formatting(doc, clean_paragraph)
+        # Use a regular expression to find the JSON part
+        json_pattern = re.compile(r"\{.*\}", re.DOTALL)
+        match = json_pattern.search(response)
 
-        doc.save(target_file_name)
+        if match:
+            json_string = match.group(0)
+            # Convert the JSON string to a Python dictionary
+            try:
+                data = json.loads(json_string)
 
-    @staticmethod
-    def _add_paragraph_with_formatting(doc: Document, text: str):
-        paragraph = doc.add_paragraph()
-        parts = text.split('**')
-        bold = False
-        for part in parts:
-            run = paragraph.add_run(part)
-            if bold:
-                run.bold = True
-            bold = not bold
+            except json.JSONDecodeError as e:
+                print("Failed to decode JSON:", e)
+        else:
+            print("No JSON found in the response.")
+        
+       
+        doc_generator = WordDocumentGenerator(data,file_name=target_file_name)
+        doc_generator.generate_document()
+        
+        
+    
